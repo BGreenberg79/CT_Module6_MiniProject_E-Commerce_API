@@ -249,3 +249,6 @@ def place_order():
     db.session.commit()
     return jsonify({"message": "new customer added successfully"}), 201
 # Not really sure how to populate or retrieve OrderDetails table at same time as working on Orders table
+
+if __name__ == "__main__":
+    app.run(debug=True)
