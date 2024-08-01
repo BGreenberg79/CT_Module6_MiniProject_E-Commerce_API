@@ -3,6 +3,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
 from marshmallow import fields, ValidationError
 from password import my_password
+from werkzeug.security import generate_password_hash, check_password_hash
+
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+mysqlconnector://root:{my_password}@127.0.0.1/e_commerce_mini_project"
@@ -76,9 +78,16 @@ class CustomerAccount(db.Model):
     __tablename__ = "Customer_Accounts"
     account_id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(255), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False) #how do you protect this attribute
+    password_hash = db.Column(db.String(255), nullable=False)
     customer_id = db.Column(db.Integer, db.ForeignKey('Customers.customer_id'))
     customer = db.relationship('Customer', backref='customer_account', uselist=False)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
 
 order_detail = db.Table('Order_Detail',
         db.Column('order_id', db.Integer, db.ForeignKey('Orders.order_id'), primary_key=True),
@@ -90,17 +99,20 @@ class Product(db.Model):
     product_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
     price = db.Column(db.Float, nullable=False)
-    orders = db.relationship('Order', secondary=order_detail, backref=db.backref('product'))
-
+    
 
 class Order(db.Model):
     __tablename__ = "Orders"
     order_id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False)
     customer_id = db.Column(db.Integer, db.ForeignKey('Customers.customer_id'))
-    total_price = db.relationship('product', secondary=order_detail, backref=db.backref('order'))
-#not confident total_price is set up right. Should reference product_id from join table and then reference price in product and sum the column
-#How to ensure all primary keys auto-increment
+    products = db.relationship("Product", secondary=order_detail, backref=db.backref('order', lazy = "dynamic"))
+
+    def add_products(self,prod):
+        self.products.append(prod)
+
+    def total_price(self):
+        total_price = [sum(self.product.price()) for self.products() in order()]
 
 with app.app_context():
     db.create_all()
@@ -245,10 +257,17 @@ def place_order():
         return jsonify(err.messages),400
     
     new_order = Order(customer_id=order_data['customer_id'], order_date=order_data['order_date']) #should i do a list of product id's here
+    products = 
     db.session.add(new_order)
     db.session.commit()
     return jsonify({"message": "new customer added successfully"}), 201
 # Not really sure how to populate or retrieve OrderDetails table at same time as working on Orders table
+
+
+
+
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)
