@@ -42,10 +42,11 @@ class OrderSchema:
     order_id = fields.Int(dump_only=True)
     customer_id = fields.Int(required=True)
     order_date = fields.Date(required=True)
+    order_status = fields.Str(required=True)
     total_price = fields.Float(dump_only=True)
 
     class Meta:
-        fields = ("order_id, customer_id, order_date, total_price")
+        fields = ("order_id, customer_id, order_date, order_status, total_price")
 
 class OrderDetailSchema:
     order_id = fields.Int(required=True)
@@ -106,6 +107,7 @@ class Order(db.Model):
     order_id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False)
     customer_id = db.Column(db.Integer, db.ForeignKey('Customers.customer_id'))
+    order_status = db.Column(db.String(50), nullable=False)
     products = db.relationship("Product", secondary=order_detail, backref=db.backref('order', lazy = "dynamic"))
 
     def add_products(self,prod):
@@ -269,18 +271,46 @@ def place_order():
     except ValidationError as err:
         return jsonify(err.messages),400
     
-    new_order = Order(customer_id=order_data['customer_id'], order_date=order_data['order_date']) #should i do a list of product id's here
+    new_order = Order(customer_id=order_data['customer_id'], order_date=order_data['order_date'], order_status=order_data['order_status']) #should i do a list of product id's here
     products = 
     db.session.add(new_order)
     db.session.commit()
     return jsonify({"message": "new customer added successfully"}), 201
 # Not really sure how to populate or retrieve OrderDetails table at same time as working on Orders table
 
+@app.route('/orders', methods=['GET'])
+def get_all_orders():
+    orders = Order.query.all()
+    return orders_schema.jsonify(orders), 200
 
+@app.route('/orders/<int:id>', methods=["GET"])
+def get_specific_order(id):
+    order = Order.query.filter(Order.order_id == id).first()
+    try:
+        return order_schema.jsonify(order), 200
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+@app.route('/orders/<int:id>', methods=["PUT"])
+def update_order(id):
+    order = Order.query.get_or_404(id)
+    try:
+        order_data = order_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+    order.customer_id = order_data['costumer_id']
+    order.order_date = order_data['order_date']
+    order.order_status = order_data['order_status']
+    db.session.commit()
+    return jsonify({"message": "Customer details updated successfully"}), 200
 
-
-
-
+@app.route('/orders/<int:id>', methods=['DELETE'])
+def delete_order(id):
+    order = Order.query.get_or_404(id)
+    db.session.delete(order)
+    db.session.commit()
+    return jsonify({"message": "Customer removed successfully"}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
