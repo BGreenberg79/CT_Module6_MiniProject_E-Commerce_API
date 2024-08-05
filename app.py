@@ -195,7 +195,7 @@ def get_customer_account(id):
 #unsure how to display Customer details here as well. Right now only displays customer account details.    
 
 @app.route('/accounts/<int:id>', methods=["PUT"])
-def update_customer(id):
+def update_customer_account(id):
     customer_account = CustomerAccount.query.get_or_404(id)
     try:
         customer_account_data = customer_account_schema.load(request.json)
@@ -209,14 +209,27 @@ def update_customer(id):
     return jsonify({"message": "Customer details updated successfully"}), 200
 
 @app.route('/accounts/<int:id>', methods=['DELETE'])
-def delete_customer(id):
+def delete_customer_account(id):
     customer_account = Customer.query.get_or_404(id)
     db.session.delete(customer_account)
     db.session.commit()
     return jsonify({"message": "Customer removed successfully"}), 200
 
+@app.route('/products', methods=['POST'])
+def add_product():
+    try:
+        product_data = product_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages),400
+    
+    new_product = Customer(product_name=product_data['product_name'], product_type=product_data['product_type'], price=product_data['price'])
+    db.session.add(new_product)
+    db.session.commit()
+    return jsonify({"message": "new customer added successfully"}), 201
+
+
 @app.route('/products', methods=['GET'])
-def get_all_productss():
+def get_all_products():
     products = Product.query.all()
     return products_schema.jsonify(products), 200
 
