@@ -21,7 +21,7 @@ class CustomerSchema(ma.Schema):
     phone = fields.Str(required=True)
 
     class Meta:
-        fields = ("customer_id, name, email, phone")
+        fields = ("customer_id", "name", "email", "phone")
 
 class CustomerAccountSchema(ma.Schema):
     account_id = fields.Int(dump_only=True)
@@ -30,7 +30,7 @@ class CustomerAccountSchema(ma.Schema):
     password = fields.Str(required=True)
 
     class Meta:
-        fields = ("account_id, customer_id, username, password")
+        fields = ("account_id", "customer_id", "username", "password")
 
 class ProductSchema(ma.Schema):
     product_id = fields.Int(dump_only=True)
@@ -39,17 +39,17 @@ class ProductSchema(ma.Schema):
     price = fields.Float(required=True)
 
     class Meta:
-        fields = ("product_id, product_name, product_type, price")
+        fields = ("product_id", "product_name", "product_type", "price")
 
 class OrderSchema(ma.Schema):
     order_id = fields.Int(dump_only=True)
     customer_id = fields.Int(required=True)
     order_date = fields.Date(required=True)
     order_status = fields.Str(required=True)
-    total_price = fields.Float(dump_only=True)
+    products = fields.List(fields.Nested(ProductSchema))
 
     class Meta:
-        fields = ("order_id, customer_id, order_date, order_status, total_price")
+        fields = ("order_id", "customer_id", "order_date", "order_status", "products")
 
 class OrderDetailSchema(ma.Schema):
     order_id = fields.Int(required=True)
@@ -111,6 +111,7 @@ class Product(db.Model):
     __tablename__ = "Products"
     product_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
+    product_type = db.Column(db.String(255), nullable=False)
     price = db.Column(db.Float, nullable=False)
 
 #Connfigures Product Table
@@ -212,7 +213,8 @@ def add_customer_account():
     except ValidationError as err:
         return jsonify(err.messages),400
     
-    new_account = CustomerAccount(username=account_data['username'], password=account_data['password'], customer_id=account_data['customer_id'])
+    new_account = CustomerAccount(username=account_data['username'], customer_id=account_data['customer_id'])
+    new_account.set_password(account_data['password'])
     db.session.add(new_account)
     db.session.commit()
     return jsonify({"message": "new customer account added successfully"}), 201
@@ -268,7 +270,7 @@ def add_product():
     except ValidationError as err:
         return jsonify(err.messages),400
     
-    new_product = Customer(product_name=product_data['product_name'], product_type=product_data['product_type'], price=product_data['price'])
+    new_product = Product(name=product_data['product_name'], product_type=product_data['product_type'], price=product_data['price'])
     db.session.add(new_product)
     db.session.commit()
     return jsonify({"message": "new product added successfully"}), 201
