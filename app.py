@@ -1,7 +1,8 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import select
 from flask_marshmallow import Marshmallow
-from marshmallow import fields, ValidationError
+from marshmallow import fields, ValidationError, validate
 from password import my_password
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -34,22 +35,23 @@ class CustomerAccountSchema(ma.Schema):
 
 class ProductSchema(ma.Schema):
     product_id = fields.Int(dump_only=True)
-    product_name = fields.Str(required=True)
+    name = fields.Str(required=True)
     product_type = fields.Str(required=True)
     price = fields.Float(required=True)
 
     class Meta:
-        fields = ("product_id", "product_name", "product_type", "price")
+        fields = ("product_id", "name", "product_type", "price")
 
 class OrderSchema(ma.Schema):
     order_id = fields.Int(dump_only=True)
     customer_id = fields.Int(required=True)
-    order_date = fields.Date(required=True)
+    date = fields.Date(required=True)
     order_status = fields.Str(required=True)
     products = fields.List(fields.Nested(ProductSchema))
+    total_price = fields.Float(required=True, validate=validate.Range(min=0))
 
     class Meta:
-        fields = ("order_id", "customer_id", "order_date", "order_status", "products")
+        fields = ("order_id", "customer_id", "date", "order_status", "products", "total_price")
 
 class OrderDetailSchema(ma.Schema):
     order_id = fields.Int(required=True)
@@ -114,7 +116,7 @@ class Product(db.Model):
     product_type = db.Column(db.String(255), nullable=False)
     price = db.Column(db.Float, nullable=False)
 
-#Connfigures Product Table
+#Configures Product Table
 
 class Order(db.Model):
     __tablename__ = "Orders"
@@ -123,12 +125,14 @@ class Order(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey('Customers.customer_id'))
     order_status = db.Column(db.String(50), nullable=False)
     products = db.relationship("Product", secondary=order_detail, backref=db.backref('order', lazy = "dynamic"))
+    total_price = db.Column(db.Integer, default=0)
 
     def add_products(self,prod):
         self.products.append(prod)
 
     def total_price(self):
-        total_price = [sum(product.price) for product in self.products]
+        total_price = sum([product.price for product in self.products])
+        self.total_price = total_price
         return total_price
 
 # Configures Order table and allows us to add products to our order's, also relates back to customer through foreign key.
@@ -270,7 +274,7 @@ def add_product():
     except ValidationError as err:
         return jsonify(err.messages),400
     
-    new_product = Product(name=product_data['product_name'], product_type=product_data['product_type'], price=product_data['price'])
+    new_product = Product(name=product_data['name'], product_type=product_data['product_type'], price=product_data['price'])
     db.session.add(new_product)
     db.session.commit()
     return jsonify({"message": "new product added successfully"}), 201
@@ -302,7 +306,7 @@ def update_product(id):
     except ValidationError as err:
         return jsonify(err.messages), 400
     
-    product.product_name = product_data['product_name']
+    product.name = product_data['name']
     product.product_type = product_data['product_type']
     product.price = product_data['price']
     db.session.commit()
@@ -322,21 +326,29 @@ def delete_product(id):
 @app.route('/orders', methods=['POST'])
 def place_order():
     try:
-        order_data = order_schema.load(request.json)
-        product_ids = order_data.pop('products', [])
+        json_order = request.json
+        product_ids = json_order.pop('products', [])
         if not product_ids:
             return jsonify({"Error": "Cannot place an order without products"}), 400
+        price = json_order.pop('total_price', 0)
+        order_data = order_schema.load(json_order, partial=True)
     except ValidationError as err:
         return jsonify(err.messages),400
-    
-    new_order = Order(customer_id=order_data['customer_id'], order_date=order_data['order_date'], order_status=order_data['order_status'])
+    new_order = Order(customer_id=order_data['customer_id'], date=order_data['date'], order_status=order_data['order_status'])
     for product_id in product_ids:
-        product = Product.query.get(product_id)
+        query = select(Product).where(Product.product_id==product_id)
+        product= db.session.execute(query).scalar()
+        print(product)
+        # product = Product.query.get(product_id)
         if product:
-            new_order.add_products(product) 
+            new_order.add_products(product)
         else:
             return jsonify({"Error": f"Product with ID {product_id} not found"}), 404
-        
+    if not price:
+        new_order.total_price()
+    else:
+        new_order.total_price = price
+
     db.session.add(new_order)
     db.session.commit()
     return jsonify({"message": "new order placed successfully"}), 201
@@ -349,8 +361,10 @@ If we cannot locate a product ID in our product table we return a 404 error mess
 
 @app.route('/orders', methods=['GET'])
 def get_all_orders():
-    orders = Order.query.all()
-    return orders_schema.jsonify(orders), 200
+    query = select(Order)
+    results = db.session.execute(query).scalars()
+    order = results.all()
+    return orders_schema.jsonify(order), 200
 
 #Queries for all orders and returns a 200 success message from JSON
 
@@ -368,24 +382,26 @@ def get_specific_order(id):
 def update_order(id):
     order = Order.query.get_or_404(id)
     try:
-        order_data = order_schema.load(request.json)
-        products = order_data.get("products", [])
-        if not products:
+        json_order = request.json
+        product_ids = json_order.pop('products', [])
+        if not product_ids:
             return jsonify({"Error": "Cannot place an order without products"}), 400
+        order_data = order_schema.load(json_order)
     except ValidationError as err:
         return jsonify(err.messages), 400
     
-    order.customer_id = order_data['costumer_id']
-    order.order_date = order_data['order_date']
+    order.customer_id = order_data['customer_id']
+    order.date = order_data['date']
     order.order_status = order_data['order_status']
-    if products:
+    if product_ids:
         order.products.clear()
-        for product_id in products:
+        for product_id in product_ids:
             product = Product.query.get(product_id)
             if product:
                 order.add_products(product)
             else:
                 return jsonify({"Error": f"Product with ID {product_id} not found"}), 404
+    order.total_price()
 
     db.session.commit()
     return jsonify({"message": "Order details updated successfully"}), 200
