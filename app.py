@@ -130,10 +130,11 @@ class Order(db.Model):
     def add_products(self,prod):
         self.products.append(prod)
 
-    def total_price(self):
+    def calculate_total_price(self):
+        for product in self.products:
+            print(product.price)
         total_price = sum([product.price for product in self.products])
         self.total_price = total_price
-        return total_price
 
 # Configures Order table and allows us to add products to our order's, also relates back to customer through foreign key.
 # Also uses a list comprehension to allow us to display total price for customer
@@ -175,10 +176,10 @@ def get_customers():
 @app.route('/customers/<int:id>', methods=["GET"])
 def get_customer(id):
     customer = Customer.query.filter(Customer.customer_id == id).first()
-    try:
+    if customer:
         return customer_schema.jsonify(customer), 200
-    except ValidationError as err:
-        return jsonify(err.messages), 400
+    else:
+        return jsonify({"error": "Customer not found"}), 404
 
 # Uses an integer at the end of our URL to define specific customer we will filter our query for. Then either returns this customers information with a 200 success message or handles a 400 error.
 
@@ -235,10 +236,10 @@ def get_customer_accounts():
 @app.route('/accounts/<int:id>', methods=["GET"])
 def get_customer_account(id):
     customer_account = CustomerAccount.query.filter(CustomerAccount.account_id == id).first()
-    try:
+    if customer_account:
         return customer_account_schema.jsonify(customer_account), 200
-    except ValidationError as err:
-        return jsonify(err.messages), 400
+    else:
+        return jsonify({"error": "Customer account not found"}), 404
 
 #  Filters for a specific customer account ID and then returns the first row that matches the filter. Once the row is located we return a 200 success message or if the id is not found a 400 validation error.
 
@@ -289,12 +290,12 @@ def get_all_products():
 # Returns all products in our product table by querying all rows and returns a JSON 200 success message
 
 @app.route('/products/<int:id>', methods=["GET"])
-def get_specific_product(id):
+def get_product(id):
     product = Product.query.filter(Product.product_id == id).first()
-    try:
+    if product:
         return product_schema.jsonify(product), 200
-    except ValidationError as err:
-        return jsonify(err.messages), 400
+    else:
+        return jsonify({"error": "Product not found"}), 404
 
 # Uses same logic as earlier Customer and Customer Account methods to locate a specific product ID and return all of its details.    
 
@@ -344,10 +345,8 @@ def place_order():
             new_order.add_products(product)
         else:
             return jsonify({"Error": f"Product with ID {product_id} not found"}), 404
-    if not price:
-        new_order.total_price()
-    else:
-        new_order.total_price = price
+    
+    new_order.calculate_total_price()
 
     db.session.add(new_order)
     db.session.commit()
@@ -369,12 +368,12 @@ def get_all_orders():
 #Queries for all orders and returns a 200 success message from JSON
 
 @app.route('/orders/<int:id>', methods=["GET"])
-def get_specific_order(id):
+def get_order(id):
     order = Order.query.filter(Order.order_id == id).first()
-    try:
+    if order:
         return order_schema.jsonify(order), 200
-    except ValidationError as err:
-        return jsonify(err.messages), 400
+    else:
+        return jsonify({"error": "Order not found"}), 404
 
 #Queries specifically for the Order id entered into our URL by using the filter method and returning the first row. If an order is located a 200 success JSON message is returned, if not a 400 validation error is returned.
 
@@ -386,7 +385,7 @@ def update_order(id):
         product_ids = json_order.pop('products', [])
         if not product_ids:
             return jsonify({"Error": "Cannot place an order without products"}), 400
-        order_data = order_schema.load(json_order)
+        order_data = order_schema.load(json_order, partial=True)
     except ValidationError as err:
         return jsonify(err.messages), 400
     
@@ -401,7 +400,7 @@ def update_order(id):
                 order.add_products(product)
             else:
                 return jsonify({"Error": f"Product with ID {product_id} not found"}), 404
-    order.total_price()
+    order.calculate_total_price()
 
     db.session.commit()
     return jsonify({"message": "Order details updated successfully"}), 200
@@ -422,6 +421,46 @@ def delete_order(id):
     return jsonify({"message": "Order removed successfully"}), 200
 
 # Locates a specific order via it's ID number and either locates the query or returns a 404. If it is located we delete that order's row from the table commit the change and return a 200 success JSON message
+
+@app.route('/order_details', methods=['POST'])
+def add_order_detail():
+    try:
+        order_detail_data = order_detail_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+    order = Order.query.get(order_detail_data['order_id'])
+    product = Product.query.get(order_detail_data['product_id'])
+
+    if not order or not product:
+        return jsonify({"error": "Order or Product not found"}), 404
+
+    order.add_products(product)
+    db.session.commit()
+    return jsonify({"message": "Order detail added successfully"}), 201
+
+#Adds to order detail by loading information from request and saves to OrderDetail join table. Handles error validation and checks for order and product to exist prior to adding.
+
+@app.route('/order_details', methods=['GET'])
+def get_order_details():
+    order_details = db.session.query(order_detail).all()
+    return order_details_schema.jsoinfy(order_details), 200
+
+#Queries and returns everything in order details table
+
+@app.route('/order_details/<int:order_id>/<int:product_id>', methods=['DELETE'])
+def delete_order_detail(order_id, product_id):
+    order = Order.query.get_or_404(order_id)
+    product = Product.query.get_or_404(product_id)
+
+    if product in order.products:
+        order.products.remove(product)
+        db.session.commit()
+        return jsonify({"message": "Order detail removed successfully"}), 200
+    else:
+        return jsonify({"error": "Product not found in order"}), 404
+
+#Deletes order detail based on order id and product id provided in URL
 
 if __name__ == "__main__":
     app.run(debug=True)
