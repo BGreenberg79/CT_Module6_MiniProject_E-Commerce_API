@@ -5,6 +5,7 @@ from flask_marshmallow import Marshmallow
 from marshmallow import fields, ValidationError, validate
 from password import my_password
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_cors import CORS
 
 #Imports various modules we will need for all of our pips, including marshmallow, flask, SQLAlchemy, and my password
 
@@ -12,6 +13,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+mysqlconnector://root:{my_password}@127.0.0.1/e_commerce_mini_project"
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
+CORS(app)
 
 #Instantiates Marshmallow, Flask, and accesses my SQL Alchemy Database
 
