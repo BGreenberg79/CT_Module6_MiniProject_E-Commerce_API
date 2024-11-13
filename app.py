@@ -328,30 +328,55 @@ def delete_product(id):
 
 @app.route('/orders', methods=['POST'])
 def place_order():
+    
     try:
+        print("create order / place order")
+
         json_order = request.json
-        product_ids = json_order.pop('products', [])
+        # product_ids = json_order.pop('products', [])
+
+        # Validate product IDs
+        product_ids = json_order.pop('products', None)
+        print(product_ids)
+
         if not product_ids:
+            print("Cannot place order without products")
             return jsonify({"Error": "Cannot place an order without products"}), 400
-        price = json_order.pop('total_price', 0)
+
+        # load and validate order data
         order_data = order_schema.load(json_order, partial=True)
     except ValidationError as err:
-        return jsonify(err.messages),400
+        print('this is a validation error')
+        return jsonify(err.messages), 400
+    
+    # create a new order 
+    print("Creating new order")
     new_order = Order(customer_id=order_data['customer_id'], date=order_data['date'], order_status=order_data['order_status'])
+
+    # add products to the order
+    print("Initializing empty product array")
+    missing_products = []
+
+    # loop through products
+    print("Looping through products in", product_ids)
     for product_id in product_ids:
-        query = select(Product).where(Product.product_id==product_id)
-        product= db.session.execute(query).scalar()
-        print(product)
-        # product = Product.query.get(product_id)
+        print("Checking product_id:", product_id)
+        query = select(Product).where(Product.product_id == product_id)
+        product = db.session.execute(query).scalar()
+        print("Retrieved product:", product)  # See if this prints None or the expected Product object
         if product:
             new_order.add_products(product)
         else:
-            return jsonify({"Error": f"Product with ID {product_id} not found"}), 404
-    
-    new_order.calculate_total_price()
+            missing_products.append(product_id)
+                
+    if missing_products:
+        return jsonify({"Error": f"Product with ID {missing_products} not found"}), 404
 
+    # calculate total price and save to order 
+    new_order.calculate_total_price()
     db.session.add(new_order)
     db.session.commit()
+    
     return jsonify({"message": "new order placed successfully"}), 201
 
 '''
@@ -381,6 +406,7 @@ def get_order(id):
 
 @app.route('/orders/<int:id>', methods=["PUT"])
 def update_order(id):
+    print("update order")
     order = Order.query.get_or_404(id)
     try:
         json_order = request.json
